@@ -1,0 +1,29 @@
+{
+ "name": "Querencia",
+ "short_name": "Querencia",
+ "lang": "es",
+ "description": "Bienestar emocional, privado en tu móvil.",
+ "start_url": "/querencia-web/",
+ "scope": "/querencia-web/",
+ "display": "standalone",
+ "background_color": "#f3eefa",
+ "theme_color": "#6b4fa1",
+ "icons": [
+  {
+   "src": "/querencia-web/icono-192.png",
+   "sizes": "192x192",
+   "type": "image/png"
+  },
+  {
+   "src": "/querencia-web/icono-512.png",
+   "sizes": "512x512",
+   "type": "image/png"
+  },
+  {
+   "src": "/querencia-web/icono-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "maskable"
+  }
+ ]
+}
