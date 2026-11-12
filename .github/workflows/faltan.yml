@@ -1,0 +1,64 @@
+name: Generar fotogramas que faltan
+# Solo los movimientos que no salieron en la primera tanda. Parte de las fotos coherentes ya subidas.
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  generar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      matrix:
+        tanda: [awa, kenji, gym1, gym2, gym3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Instalar
+        run: |
+          pip install -q torch==2.9.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install -q diffusers==0.35.2 transformers==4.57.1 accelerate==1.11.0 peft==0.17.1 pillow
+      - name: Fotos de partida
+        run: |
+          t=${{ matrix.tanda }}; b=${t%[123]}
+          git fetch -q --depth 1 origin fotogramas-$b
+          mkdir -p /tmp/ant && git --work-tree=/tmp/ant checkout origin/fotogramas-$b -- .
+          if [ "$b" = gym ]; then c=coh-gym; else c=coh-yoga-$b; fi
+          mkdir -p gen/out/$c
+          python -c "
+          import os,sys
+          from PIL import Image
+          s='/tmp/ant/gen/out/$c'; d='gen/out/$c'
+          for f in os.listdir(s):
+              Image.open(os.path.join(s,f)).convert('RGB').resize((512,512),Image.LANCZOS).save(os.path.join(d,f[:-5]+'.png'))
+          "
+          ls gen/out/$c | wc -l
+      - name: Generar
+        env: { HF_HUB_DISABLE_XET: '1', PASOS: '3', OMP_NUM_THREADS: '4' }
+        run: |
+          cd gen; t=${{ matrix.tanda }}; b=${t%[123]}
+          pares=$(python -c "import json;print(' '.join(json.load(open('faltan-$t.json'))))")
+          if [ "$b" = gym ]; then python transiciones.py gym x $pares; else python transiciones.py yoga $b $pares; fi
+      - name: Subir fotogramas
+        if: always()
+        run: |
+          cd gen/out
+          rm -rf coh-*
+          python - <<'PY'
+          import os
+          from PIL import Image
+          for d in os.listdir('.'):
+              if not d.startswith('trans-'): continue
+              for f in os.listdir(d):
+                  if f.endswith('.png'):
+                      Image.open(os.path.join(d, f)).convert('RGB').resize((384, 384), Image.LANCZOS).save(os.path.join(d, f[:-4] + '.webp'), 'WEBP', quality=80, method=6)
+                      os.remove(os.path.join(d, f))
+          PY
+          git config user.name "querencia-bot"; git config user.email "bot@users.noreply.github.com"
+          git checkout --orphan fotogramas-${{ matrix.tanda }}-b
+          git rm -rq --cached . >/dev/null 2>&1 || true
+          git add -f .
+          git commit -qm "Fotogramas que faltaban ${{ matrix.tanda }}"
+          git push -f origin HEAD:fotogramas-${{ matrix.tanda }}-b
