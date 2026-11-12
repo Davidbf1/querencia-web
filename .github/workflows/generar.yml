@@ -1,0 +1,58 @@
+name: Generar vídeo real de las posturas
+# Genera, con modelos libres (Stable Diffusion 1.5 + ControlNet OpenPose + LCM-LoRA), las fotos coherentes de cada
+# postura y los fotogramas del movimiento entre posturas. Cada tanda sube su resultado a la rama «fotogramas-<tanda>».
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  generar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      matrix:
+        tanda: [ana, awa, kenji, gym]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Instalar
+        run: |
+          pip install -q torch==2.9.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install -q diffusers==0.35.2 transformers==4.57.1 accelerate==1.11.0 peft==0.17.1 pillow
+      - name: Generar
+        env: { HF_HUB_DISABLE_XET: '1', PASOS: '3', OMP_NUM_THREADS: '4' }
+        run: |
+          cd gen
+          sed -i 's/torch.set_num_threads(4)/torch.set_num_threads(4)/' coherentes.py transiciones.py
+          if [ "${{ matrix.tanda }}" = gym ]; then
+            mkdir -p out/poses-gym && cp base/gym/*.png out/poses-gym/
+            python coherentes.py gym x
+            python transiciones.py gym x $(python -c "import json;print(' '.join(json.load(open('pares-gym.json'))))")
+          else
+            p=${{ matrix.tanda }}; mkdir -p out/poses-yoga-$p && cp base/yoga/$p-montana.png out/poses-yoga-$p/montana.png
+            python coherentes.py yoga $p
+            python transiciones.py yoga $p $(python -c "import json;print(' '.join(json.load(open('pares-yoga-unicos.json'))))")
+          fi
+      - name: Subir fotogramas
+        if: always()
+        run: |
+          cd gen/out
+          python - <<'PY'
+          import os
+          from PIL import Image
+          for d in os.listdir('.'):
+              if not (d.startswith('coh-') or d.startswith('trans-')): continue
+              for f in os.listdir(d):
+                  if f.endswith('.png'):
+                      Image.open(os.path.join(d, f)).convert('RGB').resize((384, 384), Image.LANCZOS).save(os.path.join(d, f[:-4] + '.webp'), 'WEBP', quality=80, method=6)
+                      os.remove(os.path.join(d, f))
+          PY
+          rm -rf poses-*
+          git config user.name "querencia-bot"; git config user.email "bot@users.noreply.github.com"
+          git checkout --orphan fotogramas-${{ matrix.tanda }}
+          git rm -rq --cached . >/dev/null 2>&1 || true
+          git add -f .
+          git commit -qm "Fotogramas ${{ matrix.tanda }}"
+          git push -f origin HEAD:fotogramas-${{ matrix.tanda }}
