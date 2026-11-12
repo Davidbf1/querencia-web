@@ -1,0 +1,50 @@
+name: Imágenes únicas con toque futurista
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  generar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: i0, que: iconos, parte: 0, partes: 4 }
+          - { id: i1, que: iconos, parte: 1, partes: 4 }
+          - { id: i2, que: iconos, parte: 2, partes: 4 }
+          - { id: i3, que: iconos, parte: 3, partes: 4 }
+          - { id: p0, que: portadas, parte: 0, partes: 2 }
+          - { id: p1, que: portadas, parte: 1, partes: 2 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Instalar
+        run: |
+          pip install -q torch==2.9.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install -q diffusers==0.35.2 transformers==4.57.1 accelerate==1.11.0 peft==0.17.1 pillow
+      - name: Generar
+        env: { HF_HUB_DISABLE_XET: '1', OMP_NUM_THREADS: '4' }
+        run: python gen/futuro.py ${{ matrix.que }} ${{ matrix.parte }} ${{ matrix.partes }}
+      - name: Subir
+        if: always()
+        run: |
+          cd gen/out
+          python - <<'PY'
+          import os
+          from PIL import Image
+          for d in os.listdir('.'):
+              for f in os.listdir(d):
+                  if f.endswith('.png'):
+                      im = Image.open(os.path.join(d, f)).convert('RGB')
+                      im = im.resize((256, 256) if d.endswith('iconos') else (768, 384), Image.LANCZOS)
+                      im.save(os.path.join(d, f[:-4] + '.webp'), 'WEBP', quality=80, method=6); os.remove(os.path.join(d, f))
+          PY
+          git config user.name "querencia-bot"; git config user.email "bot@users.noreply.github.com"
+          git checkout --orphan futuro-${{ matrix.id }}
+          git rm -rq --cached . >/dev/null 2>&1 || true
+          git add -f .
+          git commit -qm "Futuro ${{ matrix.id }}"
+          git push -f origin HEAD:futuro-${{ matrix.id }}

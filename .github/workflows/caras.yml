@@ -1,0 +1,51 @@
+name: Mejorar las caras de las fotos
+# Repinta solo la cara (con más detalle) de cada fotograma ya generado. Resultado en la rama «<origen>-c».
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  caras:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rama: fotogramas-ana, que: yoga, prof: ana }
+          - { rama: fotogramas-awa, que: yoga, prof: awa }
+          - { rama: fotogramas-kenji, que: yoga, prof: kenji }
+          - { rama: fotogramas-gym, que: gym, prof: x }
+          - { rama: fotogramas-awa-b, que: yoga, prof: awa }
+          - { rama: fotogramas-kenji-b, que: yoga, prof: kenji }
+          - { rama: fotogramas-gym1-b, que: gym, prof: x }
+          - { rama: fotogramas-gym2-b, que: gym, prof: x }
+          - { rama: fotogramas-gym3-b, que: gym, prof: x }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Instalar
+        run: |
+          pip install -q torch==2.9.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install -q diffusers==0.35.2 transformers==4.57.1 accelerate==1.11.0 peft==0.17.1 pillow
+      - name: Esperar la rama de origen
+        run: |
+          for i in $(seq 1 120); do git ls-remote --exit-code --heads origin ${{ matrix.rama }} >/dev/null 2>&1 && break; sleep 60; done
+          git fetch -q --depth 1 origin ${{ matrix.rama }}
+          mkdir -p /tmp/ent && git --work-tree=/tmp/ent checkout origin/${{ matrix.rama }} -- .
+          find /tmp/ent -type f | wc -l
+      - name: Mejorar caras
+        env: { HF_HUB_DISABLE_XET: '1', OMP_NUM_THREADS: '4' }
+        run: |
+          cd gen
+          python caras.py ${{ matrix.que }} ${{ matrix.prof }} /tmp/ent/gen/out
+      - name: Subir
+        if: always()
+        run: |
+          cd /tmp/ent
+          git init -q; git config user.name "querencia-bot"; git config user.email "bot@users.noreply.github.com"
+          git checkout -q -b salida
+          git add -f gen; git commit -qm "Caras mejoradas ${{ matrix.rama }}"
+          git remote add o "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -f o salida:${{ matrix.rama }}-c
