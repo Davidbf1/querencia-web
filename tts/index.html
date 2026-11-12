@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Voz</title></head>
+<body style="margin:0;background:transparent">
+<script type="module">
+// Página oculta del WebView (app nativa): recibe órdenes de la app y devuelve audio WAV en base64. Nada sale del dispositivo.
+import * as M from './motor.js';
+const enviar = (o) => (window.ReactNativeWebView ? window.ReactNativeWebView.postMessage(JSON.stringify(o)) : console.log(JSON.stringify(o)));
+async function orden(m) {
+  try {
+    if (m.t === 'estado') enviar({ t: 'estado', id: m.id, descargada: await M.descargada(m.voz) });
+    else if (m.t === 'cargar') { await M.cargar(m.voz, (f) => enviar({ t: 'progreso', id: m.id, f })); enviar({ t: 'listo', id: m.id }); }
+    else if (m.t === 'hablar') { const w = await M.hablar(m.voz, m.texto, m.velocidad); enviar({ t: 'audio', id: m.id, b64: M.aBase64(w) }); }
+  } catch (e) { enviar({ t: 'error', id: m.id, msg: String((e && e.message) || e) }); }
+}
+const recibir = (e) => { try { orden(typeof e.data === 'string' ? JSON.parse(e.data) : e.data); } catch {} };
+window.addEventListener('message', recibir); document.addEventListener('message', recibir);
+window.querenciaOrden = (s) => orden(JSON.parse(s));
+enviar({ t: 'iniciado' });
+</script></body></html>
